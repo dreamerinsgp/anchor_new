@@ -28,7 +28,11 @@ fn generate_struct_serialize(item: &syn::ItemStruct) -> TokenStream2 {
             let field_names = fields.named.iter().map(|f| &f.ident);
             quote! {
                 #(
-                    borsh::BorshSerialize::serialize(&self.#field_names, writer)?;
+                    {
+                        anchor_lang::prelude::msg!(&format!("[ANCHOR_SERIALIZE] Serializing field '{}' in struct {}", stringify!(#field_names), stringify!(#struct_name)));
+                        borsh::BorshSerialize::serialize(&self.#field_names, writer)?;
+                        anchor_lang::prelude::msg!(&format!("[ANCHOR_SERIALIZE] Completed serializing field '{}'", stringify!(#field_names)));
+                    }
                 )*
             }
         }
@@ -36,7 +40,12 @@ fn generate_struct_serialize(item: &syn::ItemStruct) -> TokenStream2 {
             let indices = (0..fields.unnamed.len()).map(syn::Index::from);
             quote! {
                 #(
-                    borsh::BorshSerialize::serialize(&self.#indices, writer)?;
+                    {
+                        let field_index = #indices.index;
+                        anchor_lang::prelude::msg!(&format!("[ANCHOR_SERIALIZE] Serializing unnamed field at index {} of struct {}", field_index, stringify!(#struct_name)));
+                        borsh::BorshSerialize::serialize(&self.#indices, writer)?;
+                        anchor_lang::prelude::msg!(&format!("[ANCHOR_SERIALIZE] Completed serializing unnamed field at index {}", field_index));
+                    }
                 )*
             }
         }

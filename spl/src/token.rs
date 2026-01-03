@@ -3,6 +3,7 @@
 use anchor_lang::solana_program::account_info::AccountInfo;
 use anchor_lang::solana_program::program_pack::Pack;
 use anchor_lang::solana_program::pubkey::Pubkey;
+use anchor_lang::solana_program::msg;
 use anchor_lang::Result;
 use anchor_lang::{context::CpiContext, Accounts};
 use std::ops::Deref;
@@ -62,6 +63,7 @@ pub fn mint_to<'info>(
     ctx: CpiContext<'_, '_, '_, 'info, MintTo<'info>>,
     amount: u64,
 ) -> Result<()> {
+    msg!("111111111111111111111111");
     let ix = spl_token::instruction::mint_to(
         &spl_token::ID,
         ctx.accounts.mint.key,
@@ -70,6 +72,8 @@ pub fn mint_to<'info>(
         &[],
         amount,
     )?;
+    msg!("2222222222222222222222222222");
+
     anchor_lang::solana_program::program::invoke_signed(
         &ix,
         &[ctx.accounts.to, ctx.accounts.mint, ctx.accounts.authority],

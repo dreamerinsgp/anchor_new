@@ -1,0 +1,18 @@
+[package]
+name = "serialization-log-test"
+version = "0.1.0"
+description = "Test program to log serialization for each field"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "serialization_log_test"
+
+[features]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { path = "../../../../lang" }
+
