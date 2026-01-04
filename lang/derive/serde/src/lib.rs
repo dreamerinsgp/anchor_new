@@ -29,9 +29,9 @@ fn generate_struct_serialize(item: &syn::ItemStruct) -> TokenStream2 {
             quote! {
                 #(
                     {
-                        anchor_lang::prelude::msg!(&format!("[ANCHOR_SERIALIZE] Serializing field '{}' in struct {}", stringify!(#field_names), stringify!(#struct_name)));
+                        anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Serializing field '{}' in struct {}", stringify!(#field_names), stringify!(#struct_name)));
                         borsh::BorshSerialize::serialize(&self.#field_names, writer)?;
-                        anchor_lang::prelude::msg!(&format!("[ANCHOR_SERIALIZE] Completed serializing field '{}'", stringify!(#field_names)));
+                        anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Completed serializing field '{}'", stringify!(#field_names)));
                     }
                 )*
             }
@@ -42,9 +42,9 @@ fn generate_struct_serialize(item: &syn::ItemStruct) -> TokenStream2 {
                 #(
                     {
                         let field_index = #indices.index;
-                        anchor_lang::prelude::msg!(&format!("[ANCHOR_SERIALIZE] Serializing unnamed field at index {} of struct {}", field_index, stringify!(#struct_name)));
+                        anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Serializing unnamed field at index {} of struct {}", field_index, stringify!(#struct_name)));
                         borsh::BorshSerialize::serialize(&self.#indices, writer)?;
-                        anchor_lang::prelude::msg!(&format!("[ANCHOR_SERIALIZE] Completed serializing unnamed field at index {}", field_index));
+                        anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Completed serializing unnamed field at index {}", field_index));
                     }
                 )*
             }
@@ -79,8 +79,10 @@ fn generate_enum_serialize(item: &syn::ItemEnum) -> TokenStream2 {
                     .collect();
                 quote! {
                     #enum_name::#variant_name { #(#field_names),* } => {
+                        anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Enum variant {}::{} (index {})", stringify!(#enum_name), stringify!(#variant_name), #idx_u8));
                         writer.write_all(&[#idx_u8])?;
                         #(
+                            anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Serializing enum field {}", stringify!(#field_names)));
                             borsh::BorshSerialize::serialize(#field_names, writer)?;
                         )*
                     }
@@ -92,8 +94,10 @@ fn generate_enum_serialize(item: &syn::ItemEnum) -> TokenStream2 {
                     .collect();
                 quote! {
                     #enum_name::#variant_name(#(#field_names),*) => {
+                        anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Enum variant {}::{} (index {})", stringify!(#enum_name), stringify!(#variant_name), #idx_u8));
                         writer.write_all(&[#idx_u8])?;
                         #(
+                            anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Serializing enum unnamed field at position {}", #idx_u8));
                             borsh::BorshSerialize::serialize(#field_names, writer)?;
                         )*
                     }
@@ -102,6 +106,7 @@ fn generate_enum_serialize(item: &syn::ItemEnum) -> TokenStream2 {
             Fields::Unit => {
                 quote! {
                     #enum_name::#variant_name => {
+                        anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Enum variant {}::{} (index {}) - unit variant", stringify!(#enum_name), stringify!(#variant_name), #idx_u8));
                         writer.write_all(&[#idx_u8])?;
                     }
                 }
@@ -112,9 +117,11 @@ fn generate_enum_serialize(item: &syn::ItemEnum) -> TokenStream2 {
     quote! {
         impl #impl_generics borsh::BorshSerialize for #enum_name #ty_generics #where_clause {
             fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> borsh::io::Result<()> {
+                anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Serializing enum {}", stringify!(#enum_name)));
                 match self {
                     #(#serialize_variants)*
                 }
+                anchor_lang::solana_program::log::sol_log(&format!("[ANCHOR_SERIALIZE] Completed serializing enum {}", stringify!(#enum_name)));
                 Ok(())
             }
         }

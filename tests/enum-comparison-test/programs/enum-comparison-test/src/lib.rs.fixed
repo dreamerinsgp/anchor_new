@@ -1,0 +1,79 @@
+use anchor_lang::prelude::*;
+
+declare_id!("4cvtqS6DSUPmwM4JEFsdi1Leiqdexqs7zefggUycKhy2");
+
+// FIXED VERSION: Added PartialEq, Eq, and Copy traits
+// Now Rust knows how to compare your enum values. You've given it the "membership card"
+// (PartialEq) so it allows you to use == and != operators.
+//
+// Before: Trying to use == without PartialEq = like trying to enter a gym without membership
+// After: With PartialEq = you have the membership, you can use the equipment
+#[derive(Clone, Copy, PartialEq, Eq, AnchorSerialize, AnchorDeserialize)]
+pub enum LotteryStatus {
+    Active,     // Tickets can be purchased
+    Completed,  // Winner drawn, funds distributed
+    Cancelled,  // Merchant cancelled, refunds available
+}
+
+#[account]
+pub struct Lottery {
+    pub merchant: Pubkey,
+    pub status: LotteryStatus,
+    pub ticket_price: u64,
+}
+
+#[program]
+pub mod enum_comparison_test {
+    use super::*;
+
+    pub fn initialize(ctx: Context<Initialize>, ticket_price: u64) -> Result<()> {
+        let lottery = &mut ctx.accounts.lottery;
+        lottery.merchant = ctx.accounts.user.key();
+        lottery.status = LotteryStatus::Active;
+        lottery.ticket_price = ticket_price;
+        Ok(())
+    }
+
+    // This function now works correctly with PartialEq trait
+    // The == comparison is now allowed because LotteryStatus implements PartialEq
+    pub fn check_status(ctx: Context<CheckStatus>) -> Result<()> {
+        let lottery = &ctx.accounts.lottery;
+        
+        // This line now compiles successfully with PartialEq trait
+        // It's like having permission to use the == tool
+        require!(
+            lottery.status == LotteryStatus::Active,
+            LotteryError::LotteryNotActive
+        );
+        
+        msg!("Lottery is active!");
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = 8 + 32 + 1 + 8 // discriminator + merchant + status + ticket_price
+    )]
+    pub lottery: Account<'info, Lottery>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CheckStatus<'info> {
+    pub lottery: Account<'info, Lottery>,
+}
+
+#[error_code]
+pub enum LotteryError {
+    #[msg("Lottery is not active")]
+    LotteryNotActive,
+}
+

@@ -426,27 +426,58 @@ fn generate_constraint_realloc(
         // Blocks duplicate account reallocs in a single instruction to prevent accidental account overwrites
         // and to ensure the calculation of the change in bytes is based on account size at program entry
         // which inheritantly guarantee idempotency.
+        anchor_lang::prelude::msg!("[REALLOC CHECK] Starting reallocation check for account: {}", #account_name);
+        
         if __reallocs.contains(&#field.key()) {
+            anchor_lang::prelude::msg!("[REALLOC CHECK] ❌ Account {} already reallocated in this instruction", #account_name);
             return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::AccountDuplicateReallocs).with_account_name(#account_name));
         }
 
         let __anchor_rent = anchor_lang::prelude::Rent::get()?;
         let __field_info = #field.to_account_info();
-        let __new_rent_minimum = __anchor_rent.minimum_balance(#new_space);
+        let __current_size = __field_info.data_len();
+        let __new_space_value = #new_space;
+        let __new_rent_minimum = __anchor_rent.minimum_balance(__new_space_value);
 
-        let __delta_space = (::std::convert::TryInto::<isize>::try_into(#new_space).unwrap())
-            .checked_sub(::std::convert::TryInto::try_into(__field_info.data_len()).unwrap())
+        anchor_lang::prelude::msg!("[REALLOC CHECK] Account: {}", #account_name);
+        anchor_lang::prelude::msg!("[REALLOC CHECK]   Current size: {} bytes", __current_size);
+        anchor_lang::prelude::msg!("[REALLOC CHECK]   New size: {} bytes", __new_space_value);
+        
+        let __delta_space = (::std::convert::TryInto::<isize>::try_into(__new_space_value).unwrap())
+            .checked_sub(::std::convert::TryInto::try_into(__current_size).unwrap())
             .unwrap();
 
+        anchor_lang::prelude::msg!("[REALLOC CHECK]   Delta space: {} bytes ({:.2} KB)", 
+            __delta_space, 
+            __delta_space as f64 / 1024.0);
+
         if __delta_space != 0 {
+            anchor_lang::prelude::msg!("[REALLOC CHECK]   Reallocation needed (delta != 0)");
+            
             #payer_optional_check
             if __delta_space > 0 {
+                anchor_lang::prelude::msg!("[REALLOC CHECK]   Increasing account size");
+                
+                let __delta_space_usize = ::std::convert::TryInto::<usize>::try_into(__delta_space).unwrap();
+                let __max_permitted = anchor_lang::solana_program::entrypoint::MAX_PERMITTED_DATA_INCREASE;
+                
+                anchor_lang::prelude::msg!("[REALLOC CHECK]   Checking 10KB limit:");
+                anchor_lang::prelude::msg!("[REALLOC CHECK]     Delta: {} bytes", __delta_space_usize);
+                anchor_lang::prelude::msg!("[REALLOC CHECK]     Max permitted: {} bytes (10KB)", __max_permitted);
+                
                 #system_program_optional_check
-                if ::std::convert::TryInto::<usize>::try_into(__delta_space).unwrap() > anchor_lang::solana_program::entrypoint::MAX_PERMITTED_DATA_INCREASE {
+                if __delta_space_usize > __max_permitted {
+                    anchor_lang::prelude::msg!("[REALLOC CHECK]   ❌ REALLOCATION FAILED: Delta ({}) exceeds limit ({})", 
+                        __delta_space_usize, __max_permitted);
+                    anchor_lang::prelude::msg!("[REALLOC CHECK]   ⚠️  This limit applies in inner instruction context (after CPI calls)");
                     return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::AccountReallocExceedsLimit).with_account_name(#account_name));
                 }
+                
+                anchor_lang::prelude::msg!("[REALLOC CHECK]   ✅ Delta within 10KB limit");
 
                 if __new_rent_minimum > __field_info.lamports() {
+                    let __rent_needed = __new_rent_minimum.checked_sub(__field_info.lamports()).unwrap();
+                    anchor_lang::prelude::msg!("[REALLOC CHECK]   Transferring {} lamports for rent", __rent_needed);
                     anchor_lang::system_program::transfer(
                         anchor_lang::context::CpiContext::new(
                             system_program.key(),
@@ -455,17 +486,27 @@ fn generate_constraint_realloc(
                                 to: __field_info.clone(),
                             },
                         ),
-                        __new_rent_minimum.checked_sub(__field_info.lamports()).unwrap(),
+                        __rent_needed,
                     )?;
+                    anchor_lang::prelude::msg!("[REALLOC CHECK]   ✅ Rent transfer completed");
+                } else {
+                    anchor_lang::prelude::msg!("[REALLOC CHECK]   Account has sufficient lamports for rent");
                 }
             } else {
+                anchor_lang::prelude::msg!("[REALLOC CHECK]   Decreasing account size (refunding lamports)");
                 let __lamport_amt = __field_info.lamports().checked_sub(__new_rent_minimum).unwrap();
                 **#payer.to_account_info().lamports.borrow_mut() = #payer.to_account_info().lamports().checked_add(__lamport_amt).unwrap();
                 **__field_info.lamports.borrow_mut() = __field_info.lamports().checked_sub(__lamport_amt).unwrap();
             }
 
-            __field_info.resize(#new_space)?;
+            anchor_lang::prelude::msg!("[REALLOC CHECK]   Attempting to resize account from {} to {} bytes", 
+                __current_size, __new_space_value);
+            __field_info.resize(__new_space_value)?;
+            anchor_lang::prelude::msg!("[REALLOC CHECK]   ✅ Account resized successfully");
             __reallocs.insert(#field.key());
+            anchor_lang::prelude::msg!("[REALLOC CHECK]   ✅ Reallocation completed for account: {}", #account_name);
+        } else {
+            anchor_lang::prelude::msg!("[REALLOC CHECK]   No reallocation needed (delta = 0)");
         }
     }
 }
@@ -1109,6 +1150,8 @@ fn generate_constraint_init_group(
                 #find_pda
 
                 let #field = ({ #[inline(never)] || {
+                    anchor_lang::prelude::msg!("[INIT CONSTRAINT] Starting init for account: {}", #name_str);
+                    
                     // Checks that all the required accounts for this operation are present.
                     #optional_checks
 
@@ -1117,21 +1160,32 @@ fn generate_constraint_init_group(
 
                     // Define the account space variable.
                     #space
+                    
+                    anchor_lang::prelude::msg!("[INIT CONSTRAINT] Account space: {} bytes ({:.2} KB)", space, space as f64 / 1024.0);
+                    anchor_lang::prelude::msg!("[INIT CONSTRAINT] Account owner: {:?}", actual_owner);
+                    anchor_lang::prelude::msg!("[INIT CONSTRAINT] If needed: {}", #if_needed);
 
                     // Create the account. Always do this in the event
                     // if needed is not specified or the system program is the owner.
                     let pa: #ty_decl = if !#if_needed || actual_owner == &anchor_lang::solana_program::system_program::ID {
+                        anchor_lang::prelude::msg!("[INIT CONSTRAINT] Will create account via CPI");
                         #payer_optional_check
 
                         // CPI to the system program to create.
+                        anchor_lang::prelude::msg!("[INIT CONSTRAINT] About to call generate_create_account");
                         #create_account
+                        anchor_lang::prelude::msg!("[INIT CONSTRAINT] Account creation CPI completed");
 
                         // Convert from account info to account context wrapper type.
+                        anchor_lang::prelude::msg!("[INIT CONSTRAINT] Converting from account info");
                         #from_account_info_unchecked
                     } else {
+                        anchor_lang::prelude::msg!("[INIT CONSTRAINT] Account already exists, skipping creation");
                         // Convert from account info to account context wrapper type.
                         #from_account_info
                     };
+                    
+                    anchor_lang::prelude::msg!("[INIT CONSTRAINT] Account initialization completed for: {}", #name_str);
 
                     // Assert the account was created correctly.
                     if #if_needed {
@@ -1674,24 +1728,37 @@ fn generate_create_account(
     payer: proc_macro2::TokenStream,
     seeds_with_nonce: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
+    let field_name = field.to_string();
     // Field, payer, and system program are already validated to not be an Option at this point
     quote! {
+        anchor_lang::prelude::msg!("[CREATE ACCOUNT] Starting account creation for: {}", #field_name);
+        
         // If the account being initialized already has lamports, then
         // return them all back to the payer so that the account has
         // zero lamports when the system program's create instruction
         // is eventually called.
         let __current_lamports = #field.lamports();
+        anchor_lang::prelude::msg!("[CREATE ACCOUNT] Current lamports: {}", __current_lamports);
+        
         if __current_lamports == 0 {
             // Create the token account with right amount of lamports and space, and the correct owner.
             let space = #space;
             let lamports = __anchor_rent.minimum_balance(space);
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT] Creating new account:");
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT]   Space: {} bytes ({:.2} KB)", space, space as f64 / 1024.0);
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT]   Lamports: {}", lamports);
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT]   ⚠️  About to call create_account via CPI");
+            
             let cpi_accounts = anchor_lang::system_program::CreateAccount {
                 from: #payer.to_account_info(),
                 to: #field.to_account_info()
             };
             let cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), cpi_accounts);
             anchor_lang::system_program::create_account(cpi_context.with_signer(&[#seeds_with_nonce]), lamports, space as u64, #owner)?;
+            
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT]   ✅ create_account CPI call completed");
         } else {
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT] Account already has lamports, using allocate path");
             require_keys_neq!(#payer.key(), #field.key(), anchor_lang::error::ErrorCode::TryingToInitPayerAsProgramAccount);
             // Fund the account for rent exemption.
             let required_lamports = __anchor_rent
@@ -1699,6 +1766,7 @@ fn generate_create_account(
                 .max(1)
                 .saturating_sub(__current_lamports);
             if required_lamports > 0 {
+                anchor_lang::prelude::msg!("[CREATE ACCOUNT] Transferring {} lamports for rent", required_lamports);
                 let cpi_accounts = anchor_lang::system_program::Transfer {
                     from: #payer.to_account_info(),
                     to: #field.to_account_info(),
@@ -1707,17 +1775,25 @@ fn generate_create_account(
                 anchor_lang::system_program::transfer(cpi_context, required_lamports)?;
             }
             // Allocate space.
+            let space_value = #space;
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT] Allocating space: {} bytes ({:.2} KB)", space_value, space_value as f64 / 1024.0);
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT]   ⚠️  About to call allocate via CPI");
+            
             let cpi_accounts = anchor_lang::system_program::Allocate {
                 account_to_allocate: #field.to_account_info()
             };
             let cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), cpi_accounts);
-            anchor_lang::system_program::allocate(cpi_context.with_signer(&[#seeds_with_nonce]), #space as u64)?;
+            anchor_lang::system_program::allocate(cpi_context.with_signer(&[#seeds_with_nonce]), space_value as u64)?;
+            
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT]   ✅ allocate CPI call completed");
             // Assign to the spl token program.
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT] Assigning account to owner");
             let cpi_accounts = anchor_lang::system_program::Assign {
                 account_to_assign: #field.to_account_info()
             };
             let cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), cpi_accounts);
             anchor_lang::system_program::assign(cpi_context.with_signer(&[#seeds_with_nonce]), #owner)?;
+            anchor_lang::prelude::msg!("[CREATE ACCOUNT]   ✅ Account creation completed for: {}", #field_name);
         }
     }
 }

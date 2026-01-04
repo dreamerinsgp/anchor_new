@@ -47,7 +47,7 @@ describe("serialization-log-test", () => {
     const testAccount = anchor.web3.Keypair.generate();
 
     // First initialize
-    await program.methods
+     await program.methods
       .initialize(
         new anchor.BN(100),
         "Initial Name",
@@ -61,7 +61,7 @@ describe("serialization-log-test", () => {
       .signers([testAccount])
       .rpc();
 
-    // Then update
+    // // Then update
     const tx = await program.methods
       .update(
         1, // Completed status
@@ -77,17 +77,32 @@ describe("serialization-log-test", () => {
 
     console.log("\n=== Update transaction signature:", tx, "===");
     
+    // Wait a bit for transaction to be confirmed
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
     // Fetch and display transaction logs
     const txDetails = await program.provider.connection.getTransaction(tx, {
       commitment: "confirmed",
       maxSupportedTransactionVersion: 0,
     });
     
+    if (!txDetails) {
+      console.log("\n⚠️ Warning: Could not fetch transaction details. Transaction may still be processing.");
+      return;
+    }
+    
+    if (txDetails.meta?.err) {
+      console.log("\n❌ Transaction failed with error:", txDetails.meta.err);
+    }
+    
     if (txDetails?.meta?.logMessages) {
       console.log("\n=== Program Logs (Field-by-Field Serialization) ===");
       txDetails.meta.logMessages.forEach((log, index) => {
         console.log(`[${index}] ${log}`);
       });
+    } else {
+      console.log("\n⚠️ Warning: No log messages found in transaction.");
+      console.log("Transaction details:", JSON.stringify(txDetails.meta, null, 2));
     }
   });
 });

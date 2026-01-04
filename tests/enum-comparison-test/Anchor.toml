@@ -1,0 +1,10 @@
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[programs.localnet]
+enum_comparison_test = "4cvtqS6DSUPmwM4JEFsdi1Leiqdexqs7zefggUycKhy2"
+
+[scripts]
+test = "yarn run ts-mocha -t 1000000 tests/*.ts"
+
